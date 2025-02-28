@@ -6,10 +6,10 @@ import argparse
 import json
 import logging
 import requests
-from config import CropWizardConfig, LangchainConfig, OpenAIConfig
+from config import CropWizardConfig, LangchainConfig, OpenAIConfig, OllamaConfig
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-#### Add langchain libraries for other LLM providers
+from langchain_community.chat_models import ChatOllama
 from os import environ, getenv
 from ragas.llms import LangchainLLMWrapper
 from ragas import evaluate as ragas_eval
@@ -35,7 +35,8 @@ config = CropWizardConfig()
 LangchainConfig()
 
 # Initialize LLM specific environment variables
-OpenAIConfig()
+openaiconfig = OpenAIConfig()
+ollamaconfig = OllamaConfig()
 
 
 # Defining methods
@@ -263,7 +264,8 @@ def single_judge_evaluation(question_answer_pairs:dict,
 
     Args:
         question_answer_pairs (dict): A dictionary containing question-answer pairs for evaluation.
-        judge (int, optional): An integer representing the choice of LLM model to use for evaluation. Defaults to 0.
+        judge (str, optional): A string representing the choice of LLM model to use for evaluation. Defaults to "gpt-4o-mini".
+        log (bool, optional): Whether to log errors. Defaults to True.
 
     Returns:
         results (str): Average result for each metric from the Ragas framework.
@@ -280,15 +282,30 @@ def single_judge_evaluation(question_answer_pairs:dict,
     
     # Initialize Langchain LLM wrapper
     llm_options = {
-    "gpt-4o-mini": ChatOpenAI(model="gpt-4o-mini"),
-    "gpt-4o": ChatOpenAI(model="gpt-4o"),
-#     3: ChatAnthropic(model="claude-3-5-sonnet-latest")),  # Anthropic Claude 3.5 Sonnet
-#     4: ChatCohere(model="command-r-plus")),  # Cohere Command-R-plus
-#     5: ChatGoogleGenerativeAI(model="gemini-2.0-flash-001"),   # Google Vertex AI Gemini 2.0 Flash
-#     6: ChatNVIDIA(model="meta/llama3-70b-instruct"),   # NVIDIA LLaMA 3-70B
+    # OpenAI models
+    "gpt-4o-mini": ChatOpenAI(model="gpt-4o-mini", temperature=openaiconfig.temperature),
+    "gpt-4o": ChatOpenAI(model="gpt-4o", temperature=openaiconfig.temperature),
+    
+    # Ollama models
+    "deepseek-r1": ChatOllama(model="deepseek-r1", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "llama3": ChatOllama(model="llama3", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "mistral": ChatOllama(model="mistral", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "mixtral": ChatOllama(model="mixtral", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    
+    # Commented out models that could be added in the future
+    # "claude-3-5-sonnet": ChatAnthropic(model="claude-3-5-sonnet-latest", temperature=0.1),
+    # "command-r-plus": ChatCohere(model="command-r-plus", temperature=0.1),
+    # "gemini-2-flash": ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", temperature=0.1),
+    # "llama3-70b": ChatNVIDIA(model="meta/llama3-70b-instruct", temperature=0.1),
     }
 
-    evaluator_llm = LangchainLLMWrapper(llm_options.get(judge, "gpt-4o-mini"))
+    # Check if the judge model is in the available options
+    if judge in llm_options:
+        evaluator_llm = LangchainLLMWrapper(llm_options[judge])
+    else:
+        if log:
+            logging.error(f"Model '{judge}' not found in available models. Reverting to default model (gpt-4o-mini).")
+        evaluator_llm = LangchainLLMWrapper(llm_options["gpt-4o-mini"])
 
     # Run evaluation
     results = ragas_eval(
@@ -363,7 +380,7 @@ def single_judge_evaluation(question_answer_pairs:dict,
 def main(question_answer_pair:json, test_judge:list=["gpt-4o-mini"], ) -> str:
     with open(question_answer_pair, "r") as imported_json:
         imported_dataset = json.load(imported_json)
-    list_of_judge_tests=["gpt-4o-mini"]
+    list_of_judge_tests=["gpt-4o-mini", "gpt-4o", "deepseek-r1", "llama3", "mistral"]
     if all(item in list_of_judge_tests for item in test_judge):
         if len(test_judge) == 1:
             return single_judge_evaluation(imported_dataset, test_judge[0])
