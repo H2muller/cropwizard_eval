@@ -1,5 +1,5 @@
 from os import environ, getenv
-from typing import List
+# from typing import List
 
 class CropWizardConfig:
     def __init__(self):
@@ -80,14 +80,16 @@ class OpenAIConfig:
 
 class OllamaConfig:
     def __init__(self):
-        self.base_url = str(getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
-        self.available_models = [
-            "deepseek-r1",
-            "llama3",
-            "mistral",
-            "mixtral"
-            # Add other models as needed
-        ]
+        # self.base_url = str(getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+        self.base_url = str(getenv("OLLAMA_BASE_URL", str(getenv("OLLAMA_API_URL"))))
+        self.available_models = { # Add other self-hosted models as needed
+            'Llama 3.1 8b Instruct':'llama3.1:8b-instruct-fp16',
+            'Llama 3.2 1b Instruct':'llama3.2:1b-instruct-fp16',
+            'Llama 3.2 3b Instruct':'llama3.2:3b-instruct-fp16',
+            'DeepSeek R1 14b Qwen Distill':'deepseek-r1:14b-qwen-distill-fp16',
+            'Qwen 2.5 14b Instruct':'qwen2.5:14b-instruct-fp16',
+            'Qwen 2.5 7b Instruct':'qwen2.5:7b-instruct-fp16',
+        }
         self.temperature = 0.1  # Default temperature
 
     def __repr__(self):
@@ -97,6 +99,6 @@ class OllamaConfig:
         """Returns the Ollama configuration as a dictionary."""
         return {
             "base_url": self.base_url,
-            "available_models": self.available_models,
+            "available_models": list(self.available_models.keys()),
             "temperature": self.temperature,
         }
