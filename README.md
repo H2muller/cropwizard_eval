@@ -5,14 +5,12 @@ CropWizard is an agriculture-focused LLM trained on domain-specific knowledge. W
 
 ## Features
 
-- LLM-as-a-judge evaluation capabilities with a single model
+- LLM-as-a-judge evaluation capabilities with single or multiple models
 - Comprehensive error logging
 - Configurable evaluation parameters
 - Integration with LangChain for result logging
-
-### Upcoming Features
-- Support for multiple LLM providers (currently configured for OpenAI)
-- Multi-judge evaluation capabilities for benchmarking
+- Support for multiple LLM providers (OpenAI and Ollama)
+- Multi-judge evaluation for benchmarking and comparison
 
 ## Prerequisites
 
@@ -20,11 +18,13 @@ CropWizard is an agriculture-focused LLM trained on domain-specific knowledge. W
 - API key to access CropWizard (or any RAG+LLM you want to test)
 - API keys for LLMs you plan to use (Currently supported: OpenAI)
 - LangChain API access
+- Ollama (optional, for local LLM evaluation)
 
 **Required Python packages (install via pip):**
 - argparse
 - requests
 - langchain-openai
+- langchain-ollama (for Ollama integration)
 - ragas
 - python-dotenv (optional)
 
@@ -38,7 +38,7 @@ cd CropWizard
 
 2. Install required packages:
 ```bash
-pip install langchain-openai python-dotenv ragas requests argparse
+pip install langchain-openai langchain-ollama python-dotenv ragas requests argparse
 ```
 
 ## Environment Setup (optional)
@@ -56,6 +56,9 @@ LANGCHAIN_API_KEY=<your-langchain-api-key>
 
 # OpenAI Configuration
 OPENAI_API_KEY=<your-openai-api-key>
+
+# Ollama Configuration (optional)
+OLLAMA_API_URL=<ollama-api-endpoint> # Default: http://localhost:11434
 ```
 
 ## Usage
@@ -65,8 +68,42 @@ OPENAI_API_KEY=<your-openai-api-key>
 Run the evaluation with a JSON file containing question-answer pairs:
 
 ```bash
-python RAG_eval.py --qa_file path/to/your/qa_pairs.json
+# Single judge evaluation
+python RAG_eval.py --qa_file path/to/your/qa_pairs.json --judge gpt-4o-mini
+
+# Multi-judge evaluation
+python RAG_eval.py --qa_file path/to/your/qa_pairs.json --judge gpt-4o-mini gpt-4o llama3.1:8b
 ```
+
+The multi-judge evaluation feature allows you to compare the performance of different LLM models as judges. This is particularly useful for:
+
+1. Benchmarking different models against each other
+2. Identifying potential biases in specific models
+3. Finding the most cost-effective judge for your specific use case
+4. Comparing commercial APIs (like OpenAI) with local models (via Ollama)
+
+When using multiple judges, the tool generates a comprehensive report with:
+- A comparison table showing metrics from all judges side by side
+- Individual sections for each judge with their overall metrics
+- Detailed question-by-question results for each judge
+
+### Available Judge Models
+
+The tool currently supports the following judge models:
+
+**OpenAI Models:**
+- `gpt-4o-mini` - Recommended for most evaluations (good balance of cost and performance)
+- `gpt-4o` - Higher quality but more expensive
+
+**Ollama Models (requires Ollama installation):**
+- `llama3.1:8b` - Llama 3.1 8B Instruct model
+- `llama3.2:1b` - Llama 3.2 1B Instruct model
+- `llama3.2:3b` - Llama 3.2 3B Instruct model
+- `deepseek-r1:14b` - DeepSeek Coder R1 14B model
+- `qwen2.5:14b` - Qwen 2.5 14B Instruct model
+- `qwen2.5:7b` - Qwen 2.5 7B Instruct model
+
+You can specify any combination of these models in the `--judge` parameter to compare their performance.
 
 ### Input JSON Format
 
@@ -114,7 +151,17 @@ class LangchainConfig:
 ```python
 class OpenAIConfig:
     api_key            # Your OpenAI API key
+    temperature        # Default temperature (default: 0.1)
 ```
+
+#### Ollama Configuration
+```python
+class OllamaConfig:
+    base_url           # Ollama API endpoint (default: from OLLAMA_API_URL or http://localhost:11434)
+    available_models   # Dictionary of available Ollama models
+    temperature        # Default temperature (default: 0.1)
+```
+
 New classes will be added to hold API information for additional LLM providers on future updates.
 
 ### API Key Security
@@ -179,3 +226,7 @@ Errors are logged to `cropwizard_rag_eval_error_log.txt` with timestamps and det
 ## Contributing
 
 Feel free to submit issues and enhancement requests.
+
+## License
+
+[Your License Here]
