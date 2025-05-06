@@ -83,12 +83,12 @@ class OllamaConfig:
         # self.base_url = str(getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
         self.base_url = str(getenv("OLLAMA_BASE_URL", str(getenv("OLLAMA_API_URL"))))
         self.available_models = { # Add other self-hosted models as needed
-            'Llama 3.1 8b Instruct':'llama3.1:8b-instruct-fp16',
-            'Llama 3.2 1b Instruct':'llama3.2:1b-instruct-fp16',
-            'Llama 3.2 3b Instruct':'llama3.2:3b-instruct-fp16',
-            'DeepSeek R1 14b Qwen Distill':'deepseek-r1:14b-qwen-distill-fp16',
-            'Qwen 2.5 14b Instruct':'qwen2.5:14b-instruct-fp16',
-            'Qwen 2.5 7b Instruct':'qwen2.5:7b-instruct-fp16',
+            'llama3.1:8b':'llama3.1:8b-instruct-fp16',
+            'llama3.2:1b':'llama3.2:1b-instruct-fp16',
+            'llama3.2:3b':'llama3.2:3b-instruct-fp16',
+            'deepseek-r1:14b':'deepseek-r1:14b-qwen-distill-fp16',
+            'qwen2.5:14b':'qwen2.5:14b-instruct-fp16',
+            'qwen2.5:7b':'qwen2.5:7b-instruct-fp16',
         }
         self.temperature = 0.1  # Default temperature
 
