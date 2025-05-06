@@ -14,7 +14,8 @@ from typing import Optional #, Union, Dict, List,
 from config import CropWizardConfig, LangchainConfig, OpenAIConfig, OllamaConfig
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import ChatOllama
+from statistics import mean
 from ragas.llms import LangchainLLMWrapper
 from ragas import evaluate as ragas_eval
 from ragas import metrics, EvaluationDataset
@@ -142,7 +143,8 @@ class ReportGenerator:
             self.add_text(f"**ERROR:** {error_message}\n")
         
         for metric, value in metrics.items():
-            self.add_text(f"- **{metric}:** {value:.4f if isinstance(value, float) else value}")
+            formatted_value = f"{value:.4f}" if isinstance(value, float) else str(value)
+            self.add_text(f"- **{metric}:** {formatted_value}")
         
         self.add_text("")
     
@@ -390,7 +392,6 @@ def create_dataset(data:dict):
                 data["ground_truth"][i],
             ))
 
-    #
 
     # Filter the dictionary to keep only valid entries
     cleaned_data = {
@@ -470,15 +471,15 @@ def single_judge_evaluation(question_answer_pairs:dict,
     "gpt-4o": ChatOpenAI(model="gpt-4o", temperature=openaiconfig.temperature),
 
     # Ollama models
-    "llama3.1:8b-instruct-fp16": ChatOllama(model="llama3.1:8b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
-    "llama3.2:1b-instruct-fp16": ChatOllama(model="llama3.2:1b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
-    "llama3.2:3b-instruct-fp16": ChatOllama(model="llama3.2:3b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
-    "deepseek-r1:14b-qwen-distill-fp16": ChatOllama(model="deepseek-r1:14b-qwen-distill-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
-    "qwen2.5:14b-instruct-fp16": ChatOllama(model="qwen2.5:14b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
-    "qwen2.5:7b-instruct-fp16": ChatOllama(model="qwen2.5:7b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "llama3.1:8b": ChatOllama(model="llama3.1:8b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "llama3.2:1b": ChatOllama(model="llama3.2:1b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "llama3.2:3b": ChatOllama(model="llama3.2:3b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "deepseek-r1:14b": ChatOllama(model="deepseek-r1:14b-qwen-distill-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "qwen2.5:14b": ChatOllama(model="qwen2.5:14b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "qwen2.5:7b": ChatOllama(model="qwen2.5:7b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
 
     # Commented out models that could be added in the future
-    # "claude-3-5-sonnet": ChatAnthropic(model="claude-3-5-sonnet-latest", temperature=0.1),
+    # "claude-3-7-sonnet": ChatAnthropic(model="claude-3-5-sonnet-latest", temperature=0.1),
     # "command-r-plus": ChatCohere(model="command-r-plus", temperature=0.1),
     # "gemini-2-flash": ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", temperature=0.1),
     # "llama3-70b": ChatNVIDIA(model="meta/llama3-70b-instruct", temperature=0.1),
@@ -515,12 +516,18 @@ def single_judge_evaluation(question_answer_pairs:dict,
     )
 
     # Add overall metrics to report
+    def safe_get(results_obj, key, default="N/A"):
+        try:
+            return results_obj[key]
+        except KeyError:
+            return default
+
     overall_metrics = {
-        "Context Precision": results.get("context_precision", {}).get("mean", "N/A"),
-        "Context Recall": results.get("context_recall", {}).get("mean", "N/A"),
-        "Answer Relevancy": results.get("answer_relevancy", {}).get("mean", "N/A"),
-        "Faithfulness": results.get("faithfulness", {}).get("mean", "N/A"),
-        "Factual Correctness": results.get("factual_correctness", {}).get("mean", "N/A")
+        "Context Precision": mean(safe_get(results, "context_precision")),
+        "Context Recall": mean(safe_get(results, "context_recall")),
+        "Answer Relevancy": mean(safe_get(results, "answer_relevancy")),
+        "Faithfulness": mean(safe_get(results, "faithfulness")),
+        "Factual Correctness": mean(safe_get(results, "factual_correctness"))
     }
     report.add_metrics(overall_metrics, prefix="Overall ")
     
@@ -528,6 +535,15 @@ def single_judge_evaluation(question_answer_pairs:dict,
     report.add_text("---\n")
     report.add_header("Individual Question Metrics", level=2)
     
+    def get_metric_value(metric_value, i):
+        # If the metric value is a list, try to get the i-th element; otherwise, return the single (aggregated) value.
+        if isinstance(metric_value, list):
+            if i < len(metric_value):
+                return metric_value[i]
+            else:
+                return "N/A"
+        return metric_value
+
     # Add individual question results
     for i in range(len(evaluation_dict["question"])):
         # Check if this question had an error
@@ -541,11 +557,11 @@ def single_judge_evaluation(question_answer_pairs:dict,
         
         # Individual metrics for this question
         metrics_for_question = {
-            "Context Precision": results.get("context_precision", [])[i] if i < len(results.get("context_precision", [])) else "N/A",
-            "Context Recall": results.get("context_recall", [])[i] if i < len(results.get("context_recall", [])) else "N/A",
-            "Answer Relevancy": results.get("answer_relevancy", [])[i] if i < len(results.get("answer_relevancy", [])) else "N/A",
-            "Faithfulness": results.get("faithfulness", [])[i] if i < len(results.get("faithfulness", [])) else "N/A",
-            "Factual Correctness": results.get("factual_correctness", [])[i] if i < len(results.get("factual_correctness", [])) else "N/A"
+            "Context Precision": get_metric_value(results["context_precision"], i),
+            "Context Recall": get_metric_value(results["context_recall"], i),
+            "Answer Relevancy": get_metric_value(results["answer_relevancy"], i),
+            "Faithfulness": get_metric_value(results["faithfulness"], i),
+            "Factual Correctness": get_metric_value(results["factual_correctness"], i)
         }
         
         report.add_question_result(i, evaluation_dict['question'][i], metrics_for_question, had_error, error_message)
@@ -560,71 +576,218 @@ def single_judge_evaluation(question_answer_pairs:dict,
     }
 
 
-# def multi_judge_evaluation(question_answer_pairs:dict,
-#                             list_of_judges:list=[0,1,2],
-#                             ) -> dict:
-#     """
-#     Evaluates RAG performance for a set of question-answer pairs using multiple LLM judges.
+def multi_judge_evaluation(question_answer_pairs:dict,
+                            judges:list=["gpt-4o-mini"],
+                            log:bool=True,
+                            ) -> dict:
+    """
+    Evaluates RAG performance for a set of question-answer pairs using multiple LLM judges.
+    This function processes test cases once and evaluates them with each judge in the list.
 
-#     Args:
-#         question_answer_pairs (dict): A dictionary containing question-answer pairs for evaluation.
-#         judge (int, optional): A list representing the choices of LLM model to use for evaluation. Defaults to [0, 1, 2].
+    Args:
+        question_answer_pairs (dict): A dictionary containing question-answer pairs for evaluation.
+        judges (list, optional): A list of strings representing the LLM models to use for evaluation.
+        log (bool, optional): Whether to log errors. Defaults to True.
 
-#     Returns:
-#         results (dict): A dictionary containing the model name and average results for each metric from the Ragas framework.
-#     """
-#     test_cases = preprocess_test_cases(create_test_cases(question_answer_pairs))
-#     evaluation_dataset, errors = create_dataset(test_cases)
-#     if errors != []:
-#         logging.error(f"errors in dataset creation: {errors}")
-#     evaluation_dataset = convert_dict_to_list(evaluation_dataset)
+    Returns:
+        dict: A dictionary containing the evaluation results for all judges and the path to the markdown report.
+    """
+    # Initialize report
+    report = initialize_report()
+    
+    # Create test cases and preprocess them - only done once for all judges
+    test_cases = create_test_cases(question_answer_pairs, report=report)
+    processed_test_cases = preprocess_test_cases(test_cases)
+    evaluation_dict, errors = create_dataset(processed_test_cases)
+    
+    # Log errors
+    if errors:
+        if log:
+            logging.error(f"errors in dataset creation: {errors}")
+        for error_entry in errors:
+            if isinstance(error_entry[2], str) and "error" in error_entry[2].lower():
+                error_type = "unknown_error"
+                if "Error processing streaming response" in error_entry[2]:
+                    error_type = "streaming_error"
+                elif "Vector search mismatch" in error_entry[2]:
+                    error_type = "vector_search_mismatch"
+                elif "ERROR: In /getTopContexts" in error_entry[2]:
+                    error_type = "context_retrieval_error"
+                report.add_error(error_type)
+    
+    # Convert dataset to LangSmith format - only done once
+    langsmith_ragas_eval = EvaluationDataset.from_list(convert_dict_to_list(evaluation_dict))
 
-#     # Convert dataset to LangSmith format
-#     langsmith_ragas_eval = EvaluationDataset.from_list(convert_dict_to_list(evaluation_dataset))
+    # Initialize Langchain LLM wrapper options
+    llm_options = {
+    # OpenAI models
+    "gpt-4o-mini": ChatOpenAI(model="gpt-4o-mini", temperature=openaiconfig.temperature),
+    "gpt-4o": ChatOpenAI(model="gpt-4o", temperature=openaiconfig.temperature),
 
-#     # Initialize Langchain LLM wrapper
-#     llm_options = {
-#     0: ChatOpenAI(model="gpt-4o-mini"),
-#     1: ChatOpenAI(model="gpt-4o"),
-#     2: ChatOpenAI(model="gpt-3.5-turbo"),
-# #     3: ChatAnthropic(model="claude-3-5-sonnet-latest")),  # Anthropic Claude 3.5 Sonnet
-# #     4: ChatCohere(model="command-r-plus")),  # Cohere Command-R-plus
-# #     5: ChatGoogleGenerativeAI(model="gemini-2.0-flash-001"),   # Google Vertex AI Gemini 2.0 Flash
-# #     6: ChatNVIDIA(model="meta/llama3-70b-instruct"),   # NVIDIA LLaMA 3-70B
-#     }
+    # Ollama models
+    "llama3.1:8b": ChatOllama(model="llama3.1:8b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "llama3.2:1b": ChatOllama(model="llama3.2:1b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "llama3.2:3b": ChatOllama(model="llama3.2:3b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "deepseek-r1:14b": ChatOllama(model="deepseek-r1:14b-qwen-distill-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "qwen2.5:14b": ChatOllama(model="qwen2.5:14b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
+    "qwen2.5:7b": ChatOllama(model="qwen2.5:7b-instruct-fp16", base_url=ollamaconfig.base_url, temperature=ollamaconfig.temperature),
 
-#     results = {}
-#     for llm_index in list_of_judges:
-#         evaluator_llm = LangchainLLMWrapper(llm_options.get(llm_index))
+    # Commented out models that could be added in the future
+    # "claude-3-5-sonnet": ChatAnthropic(model="claude-3-5-sonnet-latest", temperature=0.1),
+    # "command-r-plus": ChatCohere(model="command-r-plus", temperature=0.1),
+    # "gemini-2-flash": ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", temperature=0.1),
+    # "llama3-70b": ChatNVIDIA(model="meta/llama3-70b-instruct", temperature=0.1),
+    }
 
-#         # Run evaluation
-#         result = ragas_eval(
-#             dataset=langsmith_ragas_eval,
-#             metrics=[
-#                 metrics.ContextPrecision(),
-#                 metrics.ContextRecall(),
-#                 metrics.AnswerRelevancy(),
-#                 metrics.Faithfulness(),
-#                 metrics.FactualCorrectness(),
-#             ],
-#             llm=evaluator_llm,
-#         )
-#         results[llm_options.get(llm_index)] = result
-
-#     return results
+    # Add judges metadata to report
+    report.add_metadata("Judge Models", {
+        "models": str(judges),
+        "count": len(judges)
+    })
+    
+    # Dictionary to store results for each judge
+    all_results = {}
+    all_metrics = {}
+    
+    # Helper function to safely get values from results
+    def safe_get(results_obj, key, default="N/A"):
+        try:
+            return results_obj[key]
+        except KeyError:
+            return default
+    
+    # Helper function to get metric value for a specific question
+    def get_metric_value(metric_value, i):
+        # If the metric value is a list, try to get the i-th element; otherwise, return the single (aggregated) value.
+        if isinstance(metric_value, list):
+            if i < len(metric_value):
+                return metric_value[i]
+            else:
+                return "N/A"
+        return metric_value
+    
+    # Add comparison section header
+    report.add_header("Judges Comparison", level=2)
+    report.add_text("Comparison of metrics across different judge models:\n")
+    
+    # Process each judge
+    for judge_name in judges:
+        # Check if the judge model is in the available options
+        if judge_name in llm_options:
+            evaluator_llm = LangchainLLMWrapper(llm_options[judge_name])
+        else:
+            if log:
+                logging.error(f"Model '{judge_name}' not found in available models. Reverting to default model (gpt-4o-mini).")
+                report.add_error("model_not_found", f"Model '{judge_name}' not found, using gpt-4o-mini instead")
+            judge_name = "gpt-4o-mini"  # Fall back to default
+            evaluator_llm = LangchainLLMWrapper(llm_options[judge_name])
+        
+        # Run evaluation for this judge
+        results = ragas_eval(
+            dataset=langsmith_ragas_eval,
+            metrics=[
+                metrics.ContextPrecision(),
+                metrics.ContextRecall(),
+                metrics.AnswerRelevancy(),
+                metrics.Faithfulness(),
+                metrics.FactualCorrectness(),
+            ],
+            llm=evaluator_llm,
+        )
+        
+        # Store results for this judge
+        all_results[judge_name] = results
+        
+        # Calculate overall metrics for this judge
+        overall_metrics = {
+            "Context Precision": mean(safe_get(results, "context_precision")),
+            "Context Recall": mean(safe_get(results, "context_recall")),
+            "Answer Relevancy": mean(safe_get(results, "answer_relevancy")),
+            "Faithfulness": mean(safe_get(results, "faithfulness")),
+            "Factual Correctness": mean(safe_get(results, "factual_correctness"))
+        }
+        
+        all_metrics[judge_name] = overall_metrics
+    
+    # Add comparison table to report
+    report.add_text("| Metric | " + " | ".join(judges) + " |")
+    report.add_text("| --- | " + " | ".join(["---"] * len(judges)) + " |")
+    
+    # Add metrics rows
+    metric_names = ["Context Precision", "Context Recall", "Answer Relevancy", "Faithfulness", "Factual Correctness"]
+    for metric in metric_names:
+        row = f"| {metric} | "
+        for judge_name in judges:
+            value = all_metrics[judge_name][metric]
+            formatted_value = f"{value:.4f}" if isinstance(value, float) else str(value)
+            row += f"{formatted_value} | "
+        report.add_text(row)
+    
+    report.add_text("\n")
+    
+    # Add individual judge sections
+    for judge_name in judges:
+        report.add_text("---\n")
+        report.add_header(f"Judge: {judge_name}", level=2)
+        
+        # Add overall metrics for this judge
+        report.add_metrics(all_metrics[judge_name], prefix=f"{judge_name} Overall ")
+        
+        # Add individual question results for this judge
+        report.add_header(f"{judge_name} Individual Question Metrics", level=3)
+        
+        for i in range(len(evaluation_dict["question"])):
+            # Check if this question had an error
+            had_error = False
+            error_message = ""
+            for error_entry in errors:
+                if error_entry[0] == evaluation_dict['question'][i]:
+                    had_error = True
+                    error_message = error_entry[2]
+                    break
+            
+            # Individual metrics for this question
+            results = all_results[judge_name]
+            metrics_for_question = {
+                "Context Precision": get_metric_value(results["context_precision"], i),
+                "Context Recall": get_metric_value(results["context_recall"], i),
+                "Answer Relevancy": get_metric_value(results["answer_relevancy"], i),
+                "Faithfulness": get_metric_value(results["faithfulness"], i),
+                "Factual Correctness": get_metric_value(results["factual_correctness"], i)
+            }
+            
+            report.add_question_result(i, evaluation_dict['question'][i], metrics_for_question, had_error, error_message)
+    
+    # Save report
+    report_path = report.save()
+    
+    # Return both results and report path
+    return {
+        "results": all_results,
+        "report_path": report_path
+    }
 
 
 def main(question_answer_pair:json, test_judge:list=["gpt-4o-mini"], ) -> dict:
     with open(question_answer_pair, "r") as imported_json:
         imported_dataset = json.load(imported_json)
-    list_of_judge_tests=["gpt-4o-mini", "gpt-4o", "deepseek-r1", "llama3", "mistral"]
+    list_of_judge_tests=["gpt-4o-mini", 
+                         "gpt-4o", 
+                         "deepseek-r1:14b", 
+                         "llama3.1:8b", 
+                         "llama3.2:1b", 
+                         "llama3.2:3b", 
+                         "qwen2.5:14b", 
+                         "qwen2.5:7b"]
     if all(item in list_of_judge_tests for item in test_judge):
         if len(test_judge) == 1:
             result = single_judge_evaluation(imported_dataset, test_judge[0])
             print(f"Evaluation complete. Report saved to: {result['report_path']}")
             return result
-        # elif len(test_judge) > 1:
-        #     return multi_judge_evaluation(imported_dataset, test_judge)
+        elif len(test_judge) > 1:
+            result = multi_judge_evaluation(imported_dataset, test_judge)
+            print(f"Multi-judge evaluation complete. Report saved to: {result['report_path']}")
+            return result
     else:
         raise ValueError(f"One or more invalid values for test_judge: {test_judge}")
 
@@ -633,12 +796,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run RAG evaluation')
     parser.add_argument('--qa_file', type=str, required=True,
                         help='Path to the JSON file containing question-answer pairs')
-    parser.add_argument('--judge', type=str, default="gpt-4o-mini",
-                        help='Judge model to use for evaluation')
+    parser.add_argument('--judge', type=str, nargs='+', default=["gpt-4o-mini"],
+                        help='Judge model(s) to use for evaluation. Specify multiple models separated by spaces.')
 
     args = parser.parse_args()
 
-    result = main(args.qa_file, [args.judge])
+    result = main(args.qa_file, args.judge)
     # print(f"Overall metrics:")
     # for metric, value in result['results'].items():
     #     if isinstance(value, dict) and 'mean' in value:
